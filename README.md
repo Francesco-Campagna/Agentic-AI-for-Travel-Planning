@@ -5,7 +5,7 @@ Assistente di viaggio conversazionale che gira **interamente in locale**: un age
 Niente API a pagamento, niente chiavi: l'intero stack parte con un solo comando Docker.
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
 Poi apri **http://localhost:5173**.
@@ -46,17 +46,17 @@ Esempi di domande:
 ### Avvio
 
 ```bash
-git clone <url-del-repository>
+git clone https://github.com/Francesco-Campagna/Agentic-AI-for-Travel-Planning
 cd "Travel Planning Agent"      # la cartella radice, quella con docker-compose.yml
 
-docker compose up --build
+docker compose up -d --build
 ```
 
 Al **primo avvio** Docker scarica le immagini e Ollama scarica i due modelli (default: `granite4:micro` e `bge-m3`): richiede qualche minuto.
 
 Quando tutti i servizi sono pronti, apri **http://localhost:5173**. Gli avvii successivi sono molto più rapidi: modelli e indice vettoriale sono salvati in volumi Docker.
 
-Per fermare tutto: `Ctrl+C` (oppure `docker compose down`). Per cancellare anche i dati persistenti (modelli, indice, voli): `docker compose down -v`.
+Per fermare tutto: `Ctrl+C` (oppure `docker compose stop`). Per cancellare anche i dati persistenti (modelli, indice, voli): `docker compose down -v`.
 
 ### ⚠️ Senza GPU NVIDIA (CPU-only, macOS, ecc.)
 
