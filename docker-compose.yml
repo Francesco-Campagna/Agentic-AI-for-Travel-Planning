@@ -1,0 +1,125 @@
+name: travel-planning-agent
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: travel-agent-ollama
+
+    ports:
+      - "11434:11434"
+
+    environment:
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_CONTEXT_LENGTH: ${OLLAMA_CONTEXT_LENGTH:-8192}
+    
+    volumes:
+      - ollama_data:/root/.ollama
+    
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 180s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+      start_interval: 3s
+    restart: unless-stopped
+    
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+
+  # Scarica il modello (se manca) e lo carica in memoria.
+  model-init:
+    image: ollama/ollama:latest
+    container_name: travel-agent-model-init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        ollama pull "${OLLAMA_MODEL:-granite4:micro}"
+        ollama pull "${OLLAMA_EMBED_MODEL:-bge-m3}"
+        ollama run "${OLLAMA_MODEL:-granite4:micro}" ""
+    restart: "no"
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: travel-agent-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    restart: unless-stopped
+
+  kb-ingest:
+    build: ./backend
+    container_name: travel-agent-kb-ingest
+    command: ["python", "-m", "app.rag.ingest"]
+    depends_on:
+      qdrant:
+        condition: service_started
+      model-init:
+        condition: service_completed_successfully
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
+      QDRANT_URL: http://qdrant:6333
+      KB_DIR: /kb
+    volumes:
+      - ./knowledge_base:/kb:ro
+    restart: "no"
+
+  backend:
+    build: ./backend
+    container_name: travel-agent-backend
+    depends_on:
+      kb-ingest:
+        condition: service_completed_successfully
+
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-granite4:micro}
+      OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
+      OLLAMA_TEMPERATURE: ${OLLAMA_TEMPERATURE:-0.3}
+      OLLAMA_EMBED_MODEL: ${OLLAMA_EMBED_MODEL:-bge-m3}
+      QDRANT_URL: http://qdrant:6333
+
+    ports:
+      - "8000:8000"
+    volumes: 
+      - flights_data:/app/data
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 180s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+      start_interval: 3s
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: travel-agent-frontend
+    
+    depends_on:
+      backend:
+        condition: service_healthy
+    
+    ports:
+      - "5173:80"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
+  qdrant_data:
+  flights_data:
